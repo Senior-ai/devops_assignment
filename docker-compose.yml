@@ -1,0 +1,29 @@
+version: '1'
+services:
+  web:
+    build: ./app
+    volumes:
+      - ./app:/app
+      - logvolume01:/var/log
+    networks:
+      - network1
+  db:
+    image: mysql
+    volumes:
+      - db_data:/var/lib/mysql
+      - logvolume01:/var/log/mysql
+    networks:
+      - network1
+    environment:
+      - MYSQL_ROOT_PASSWORD: my-secret-pw
+  nginx:
+    build: ./nginx
+    ports:
+      - "80:80"
+    networks:
+      - network1
+volumes:
+  logvolume01: {}
+  db_data: {}
+networks:
+  network1:
