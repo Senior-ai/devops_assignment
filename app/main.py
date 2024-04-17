@@ -1,46 +1,79 @@
 from flask import Flask, request, make_response
-from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime, timedelta
+import mysql.connector
+import time
 import socket
 
 app = Flask(__name__)
-# app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://username:password@localhost/db_name'
-# db = SQLAlchemy(app)
 
-# class Counter(db.Model):
-#     id = db.Column(db.Integer, primary_key=True)
-#     count = db.Column(db.Integer, default=0)
+def create_db_connection():
+    db = None
+    while db is None:
+        try:
+            db = mysql.connector.connect(
+                host="mysql_container",
+                user="root",  
+                password="root",
+                port="3306"
+            )
+            cursor = db.cursor()
+            cursor.execute("CREATE DATABASE IF NOT EXISTS mydatabase")
+            db.database = "mydatabase"
 
-# class AccessLog(db.Model):
-#     id = db.Column(db.Integer, primary_key=True)
-#     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-#     client_ip = db.Column(db.String(15))
-#     server_ip = db.Column(db.String(15))
+        except mysql.connector.Error as err:
+            print("Error connecting to MySQL: {}".format(err))
+            print("Retrying in 5 seconds...")
+            time.sleep(5)
+    return db
+
+db = create_db_connection()
+
+cursor = db.cursor()
+
+# Create tables if they don't exist
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS counter (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    count INT DEFAULT 0
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS access_log (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    client_ip VARCHAR(15),
+    server_ip VARCHAR(15)
+)
+""")
 
 @app.route('/')
 def index():
-    counter = Counter.query.first()
-    if counter is None:
-        counter = Counter(count=1)
-        db.session.add(counter)
+    cursor.execute("SELECT count FROM counter WHERE id = 1")
+    result = cursor.fetchone()
+    if result is None:
+        cursor.execute("INSERT INTO counter (id, count) VALUES (1, 1)")
+        count = 1
     else:
-        counter.count += 1
-    db.session.commit()
+        count = result[0] + 1
+        cursor.execute("UPDATE counter SET count = %s WHERE id = 1", (count,))
+    db.commit()
 
-    response = make_response(socket.gethostbyname(socket.gethostname()))
-    response.set_cookie('internal_ip', socket.gethostbyname(socket.gethostname()), max_age=timedelta(minutes=5))
+    # Record access log
+    server_ip = socket.gethostbyname(socket.gethostname())
+    cursor.execute("INSERT INTO access_log (client_ip, server_ip) VALUES (%s, %s)", (request.remote_addr, server_ip))
+    db.commit()
 
-    access_log = AccessLog(client_ip=request.remote_addr, server_ip=socket.gethostbyname(socket.gethostname()))
-    db.session.add(access_log)
-    db.session.commit()
+    # Set the cookie
+    response = make_response(server_ip)
+    response.set_cookie('internal-IP', server_ip, max_age=60*5)
 
     return response
 
 @app.route('/showcount')
 def show_count():
-    counter = Counter.query.first()
-    return str(counter.count) if counter else '0'
+    cursor.execute("SELECT count FROM counter WHERE id = 1")
+    result = cursor.fetchone()
+    return str(result[0]) if result else '0'
 
 if __name__ == '__main__':
-    db.create_all()
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=8000,debug=True)

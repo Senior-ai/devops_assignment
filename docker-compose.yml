@@ -1,27 +1,38 @@
-version: '1'
 services:
-  web:
-    build: ./app
-    volumes:
-      - ./app:/app
-      - logvolume01:/var/log
-    networks:
-      - network1
   db:
+    container_name: mysql_container
     image: mysql
+    ports:
+      - "32001:3306"
     volumes:
       - db_data:/var/lib/mysql
       - logvolume01:/var/log/mysql
     networks:
       - network1
     environment:
-      - MYSQL_ROOT_PASSWORD: my-secret-pw
+      - MYSQL_ROOT_PASSWORD=root
+
+  app:
+    build: ./app
+    ports:
+      - "8000"
+    deploy:
+      replicas: 3
+    volumes:
+      - ./app:/app
+      - logvolume01:/var/log
+    networks:
+      - network1
+
   nginx:
     build: ./nginx
+    container_name: nginx
     ports:
       - "80:80"
     networks:
       - network1
+    depends_on:
+      - app
 volumes:
   logvolume01: {}
   db_data: {}
